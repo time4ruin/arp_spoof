@@ -1,3 +1,9 @@
+/* 
+ *  ARP Spoofing
+ *  usage: arp_spoof <interface> <send ip> <target ip>
+ *  Gets only 4 inputs
+ *  Infect both <send ip> and <target ip> and relay packets bi-directionally
+ */
 #define ETHERTYPE_IP 0x0800
 #define ETHERTYPE_ARP 0x0806
 
@@ -175,8 +181,8 @@ int arp_attack(uint8_t *packet_arp_atk, pcap_t *handle, struct eth_header *eth, 
 
 void usage()
 {
-	printf("syntax: send_arp <interface> <send ip> <target ip>\n");
-	printf("sample: send_arp wlan0 192.168.10.2 192.168.10.1\n");
+	printf("syntax: arp_spoof <interface> <send ip> <target ip>\n");
+	printf("sample: arp_spoof wlan0 192.168.10.2 192.168.10.1\n");
 }
 
 int main(int argc, char *argv[])
